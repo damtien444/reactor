@@ -1,0 +1,14 @@
+[project]
+name = "reactor"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "mujoco>=3.15.0",
+    "mujoco-warp>=3.15.0",
+    "numpy>=2.5.3",
+    "scipy>=1.18.1",
+    "tensorboard>=2.21.0",
+    "torch>=2.14.1",
+    "warp-lang>=1.18.0",
+]
