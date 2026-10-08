@@ -1,7 +1,8 @@
 import time, mujoco, numpy as np, warp as wp, mujoco_warp as mjw, torch, sys
 from reactor.robot import build_model, RobotInfo
 sc = sys.argv[1]=='1'
-m=build_model(self_collision=sc); r=RobotInfo(m)
+robot = sys.argv[2] if len(sys.argv) > 2 else 'g1'
+m=build_model(robot, self_collision=sc); r=RobotInfo(m, robot)
 N=4096
 d0=mujoco.MjData(m); d0.qpos[:]=m.qpos0; d0.qpos[7:]=r.default_q; d0.qpos[2]=0.78; d0.ctrl[:]=r.default_q
 mujoco.mj_forward(m,d0)

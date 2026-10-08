@@ -30,13 +30,14 @@ from PIL import Image
 
 from reactor import ROOT
 from reactor.render import (
-    ORANGE, HumanMesh, add_grid, encode, look_at_camera, rollout, scene_model, set_robot_qpos, visual_option,
+    ORANGE, HumanMesh, add_grid, encode, look_at_camera, rollout, run_robot, scene_model, set_robot_qpos,
+    visual_option,
 )
 from reactor.seamless import (
     FACE_TO_FACE_DIST, SEAMLESS_FPS, Segment, arms_only, find_audio, find_pair, load_pose, placed_axis_angle,
     slot_translation,
 )
-from reactor.robot import CORRESPONDENCES
+from reactor.robot import get_robot
 from reactor.source import TargetContext, body_shape, make_track, save_tracks
 
 # Optional: a holosoma seamless report folder; its segment names, audio and subtitles are reused.
@@ -45,12 +46,12 @@ HOLOSOMA_REVIEW = Path(os.environ.get(
 
 
 # ---------------------------------------------------------------------- simulation
-def build_tracks(segments: list[Segment], out: Path, device, arms: bool = False) -> list[dict]:
+def build_tracks(segments: list[Segment], out: Path, device, robot: str, arms: bool = False) -> list[dict]:
     """Source tracks (robot subject) and partner poses for every segment.
 
     With ``arms`` only the replaced subject's arm motion is retargeted (see ``arms_only``).
     """
-    ctx = TargetContext.create(device)
+    ctx = TargetContext.create(device, robot)
     h_src, rest = body_shape("neutral", np.zeros(16))
     tracks, names, scenes = [], [], []
     for seg in segments:
@@ -138,18 +139,20 @@ def main():
     print(f"{len(segments)} segments -> {args.out}")
     tag = "reactor_arms" if args.arms_only else "reactor"
     data_path = args.out / f"seamless_tracks_{tag}.npz"
-    scenes = build_tracks(segments, data_path, dev, arms=args.arms_only)
+    robot = run_robot(args.run)
+    scenes = build_tracks(segments, data_path, dev, robot, arms=args.arms_only)
     print(f"[1/2] simulating ReActor policy '{args.run}'")
     # arms-only: the trained offsets of torso/leg bodies (learned on AMASS) would tilt the upright
     # reference, so only the arm bodies keep theirs
-    arm_pairs = [i for i, (b, _) in enumerate(CORRESPONDENCES) if any(k in b for k in ("shoulder", "elbow", "wrist"))]
+    arm_pairs = [i for i, (b, _) in enumerate(get_robot(robot).correspondences)
+                 if any(k in b for k in ("shoulder", "elbow", "wrist", "hand"))]
     names_sim, qpos, failed = rollout(args.run, data_path, dev, trained_bodies=arm_pairs if args.arms_only else None)
     for n, f in zip(names_sim, failed):
         print(f"  {n}: {'FELL (pose frozen after failure)' if f else 'tracked'}")
 
     print("[2/2] rendering")
     partner = HumanMesh("partner")
-    model = scene_model([(partner, ORANGE)])
+    model = scene_model([(partner, ORANGE)], robot)
     for scene, q in zip(scenes, qpos):
         seg = scene["segment"]
         out_dir = args.out / seg.name

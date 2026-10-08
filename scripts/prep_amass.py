@@ -1,7 +1,7 @@
 """Preprocess AMASS (SMPL+H G) clips into source-frame tracks for ReActor.
 
 For every kept clip we store, at 50 Hz, the global position and orientation of the SMPL+H
-joints that have a robot correspondence (reactor.robot.CORRESPONDENCES), the per-motion
+joints that have a robot correspondence (``RobotSpec.correspondences`` in reactor.robot), the per-motion
 scale s and nominal offsets x_nom (Eq. 8; these depend on the subject's betas), and an
 estimated source foot-contact signal used only for evaluation.
 
@@ -19,6 +19,7 @@ import numpy as np
 import torch
 
 from reactor import DATA
+from reactor.robot import ROBOTS
 from reactor.source import TargetContext, body_shape, make_track, save_tracks
 
 MIN_SECONDS = 1.0
@@ -40,11 +41,13 @@ EXCLUDE = re.compile(
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--amass", type=Path, default=DATA / "amass")
-    ap.add_argument("--out", type=Path, default=DATA / "processed" / "amass_g1.npz")
+    ap.add_argument("--robot", choices=list(ROBOTS), default="g1")
+    ap.add_argument("--out", type=Path, help="default: data/processed/amass_<robot>.npz")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
+    args.out = args.out or DATA / "processed" / f"amass_{args.robot}.npz"
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ctx = TargetContext.create(dev)
+    ctx = TargetContext.create(dev, args.robot)
 
     files = sorted(args.amass.rglob("*_poses.npz"))
     kept = [f for f in files if not EXCLUDE.search(str(f.relative_to(args.amass)))]

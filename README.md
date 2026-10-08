@@ -57,14 +57,24 @@ uv sync                      # creates .venv with torch, mujoco, mujoco-warp, wa
 export PYTHONPATH=$PWD       # every command below assumes this
 ```
 
-### 2. Robot model
+### 2. Robot models
 
-The Unitree G1 (29 DoF) MJCF and meshes come from
-[holosoma](https://github.com/amazon-far/holosoma). They are not stored in this repo:
+Two robots are supported. Their MJCFs and meshes are not stored in this repo:
+
+- **`g1`:** Unitree G1 (29 DoF), from [holosoma](https://github.com/amazon-far/holosoma).
+- **`k1`:** Booster K1 (22 DoF), from
+  [booster_assets](https://github.com/BoosterRobotics/booster_assets). The PD gains, effort limits
+  and default pose come from the K1 BeyondMimic config in
+  [booster_deploy](https://github.com/BoosterRobotics/booster_deploy).
 
 ```bash
-scripts/fetch_assets.sh      # -> assets/g1/ (pinned holosoma commit)
+scripts/fetch_assets.sh      # -> assets/g1/, assets/k1/ (pinned commits)
 ```
+
+Each robot is a `RobotSpec` in `reactor/robot.py`. A spec holds the scene, gains, poses, SMPL+H
+correspondences and feet. To add a robot, add a spec to `ROBOTS`. Its collision geoms must be
+spheres or capsules, because the penetration metrics assume that. The K1 spec swaps the shipped
+boxes, cylinders and meshes for capsules.
 
 ### 3. AMASS and SMPL+H (registration required)
 
@@ -122,6 +132,14 @@ uv run python scripts/evaluate.py --run reactor_g1          # -> runs/reactor_g1
 uv run python scripts/plot_training.py                      # -> runs/fig6_training_curves.png
 ```
 
+Pass `--robot k1` to `prep_amass.py` and `train.py` for the K1. The data then goes to
+`data/processed/amass_k1.npz`. Evaluation and rendering read the robot from the checkpoint.
+
+```bash
+uv run python scripts/prep_amass.py --robot k1              # -> data/processed/amass_k1.npz
+uv run python scripts/train.py --robot k1 --run reactor_k1
+```
+
 - **Outputs:** checkpoints go to `runs/<run>/model.pt` every 500 iterations. TensorBoard logs are
   in `runs/<run>/`.
 - **Resuming:** use `--resume runs/<run>/model.pt`.
@@ -163,10 +181,10 @@ On machines where headless EGL works, `MUJOCO_GL=egl` needs no display.
 
 | File | Paper |
 |---|---|
-| `reactor/robot.py` | G1 model, PD gains, nominal T-pose, sparse correspondences (Fig. 4) |
+| `reactor/robot.py` | Robot registry (G1, K1): model, PD gains, nominal T-pose, sparse correspondences (Fig. 4) |
 | `reactor/smplh.py` | SMPL+H skeleton FK (body joints) |
 | `reactor/source.py` | Source tracks: resampling to 50 Hz, scale `s`, `x_nom`, `R_nom` (Eqs. 8–9), `z_nom`, source contacts |
-| `scripts/prep_amass.py` | AMASS → `data/processed/amass_g1.npz`, with a PHC-style name filter |
+| `scripts/prep_amass.py` | AMASS → `data/processed/amass_<robot>.npz`, with a PHC-style name filter |
 | `reactor/motion.py` | Parameterized mapping `g_t` (Eqs. 10–13), projection onto `P` (Eq. 14) |
 | `reactor/env.py` | Lower-level RL environment (Sec. 6): PD + residual root wrench with deadband (Eqs. 18–19), observations (Eq. 20), retargeting phase ψ, adaptive sampling, rewards (Tab. 1) |
 | `reactor/ppo.py` | PPO with adaptive LR, MLP 3×512 ELU (Tab. 2) |
@@ -176,9 +194,9 @@ On machines where headless EGL works, `MUJOCO_GL=egl` needs no display.
 | `scripts/plot_training.py` | Fig. 6 curves |
 | `reactor/render.py` | Shared rendering: policy rollouts, SMPL+H skins in MuJoCo, camera, encoding |
 | `reactor/seamless.py` | Seamless Interaction loading and two-person slot placement (holosoma conventions) |
-| `scripts/render_amass.py` | AMASS clips: original human next to the ReActor-driven G1 |
-| `scripts/render_seamless.py` | Seamless Interaction: one subject replaced by the ReActor-driven G1 |
-| `scripts/fetch_assets.sh` | Downloads the G1 model from holosoma |
+| `scripts/render_amass.py` | AMASS clips: original human next to the ReActor-driven robot |
+| `scripts/render_seamless.py` | Seamless Interaction: one subject replaced by the ReActor-driven robot |
+| `scripts/fetch_assets.sh` | Downloads the G1 (holosoma) and K1 (booster_assets) models |
 
 ## Deviations from the paper
 
@@ -205,4 +223,5 @@ their own licences:
 - **AMASS and SMPL+H:** non-commercial research licences from MPI-IS. Do not redistribute the data
   or derived meshes.
 - **G1 model:** from holosoma; see that repo's licence.
+- **K1 model:** from booster_assets (BSD 3-Clause).
 - **Seamless Interaction:** see its dataset card.
