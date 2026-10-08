@@ -18,6 +18,7 @@ class MotionLib:
         keep = np.arange(len(d["starts"]))
         if names_filter is not None:
             keep = np.array([i for i, n in enumerate(d["names"]) if names_filter(str(n))], np.int64)
+        self.indices = keep  # positions in the dataset file (e.g. to look up trained p_z)
         self.names = [str(d["names"][i]) for i in keep]
         frames = np.concatenate([np.arange(d["starts"][i], d["starts"][i] + d["lengths"][i]) for i in keep])
         lengths = d["lengths"][keep]

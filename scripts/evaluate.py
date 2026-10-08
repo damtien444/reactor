@@ -72,9 +72,8 @@ def main():
     for b0 in range(0, M, N):
         ids = torch.arange(b0, min(M, b0 + N), device=dev)
         n = ids.numel()
-        env._sample_motions = lambda k, _ids=ids: torch.cat([_ids, _ids[:1].expand(k - n)]) if k > n else _ids[:k]
-        env.reset(torch.arange(N, device=dev))
-        env.start.zero_()
+        motions = torch.cat([ids, ids[:1].expand(N - n)])
+        env.reset(torch.arange(N, device=dev), motions, torch.zeros_like(motions))
         obs = env._observe()
         L = lib.lengths[ids]
         T = int(L.max().item()) + ecfg.init_steps

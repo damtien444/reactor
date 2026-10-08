@@ -184,13 +184,15 @@ class ReActorEnv:
         p = (1 - self.cfg.sampling_floor) * p + self.cfg.sampling_floor / p.numel()
         return torch.multinomial(p, n, replacement=True)
 
-    def reset(self, ids: torch.Tensor):
+    def reset(self, ids: torch.Tensor, motions: torch.Tensor | None = None, starts: torch.Tensor | None = None):
         if ids.numel() == 0:
             return
         n = ids.numel()
-        mot = self._sample_motions(n)
+        mot = self._sample_motions(n) if motions is None else motions
         L = self.lib.lengths[mot]
-        start = (torch.rand(n, device=self.device) * (L - 1).clamp_min(1).float()).long()
+        if starts is None:
+            starts = (torch.rand(n, device=self.device) * (L - 1).clamp_min(1).float()).long()
+        start = starts
         self.motion[ids], self.start[ids], self.k[ids] = mot, start, 0
         self.trial_count[mot] += 1  # counted at start, failures counted on early termination
 
