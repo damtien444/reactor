@@ -30,12 +30,14 @@ BLUE = [0.35, 0.65, 0.95, 1.0]
 
 # ---------------------------------------------------------------------- simulation
 @torch.no_grad()
-def rollout(run: str, data: Path, device, names_filter=None, trained_pz: bool = False, seed: int = 0):
+def rollout(run: str, data: Path, device, names_filter=None, trained_pz: bool = False, seed: int = 0,
+            trained_bodies: list[int] | None = None):
     """Roll out the trained policy once on every selected motion, from frame 0.
 
     Returns the 50 Hz qpos per motion and whether the robot failed. ``trained_pz`` uses the
     learned per-motion vertical offsets, which only exist for motions of the training set
-    (``data`` must then be the training data); otherwise p_z is 0.
+    (``data`` must then be the training data); otherwise p_z is 0. ``trained_bodies`` keeps the
+    learned per-body offsets only for those correspondence pairs (others get 0).
     """
     ck = torch.load(ROOT / "runs" / run / "model.pt", map_location=device, weights_only=False)
     lib = MotionLib(data, device, names_filter)
@@ -44,6 +46,11 @@ def rollout(run: str, data: Path, device, names_filter=None, trained_pz: bool = 
     trained = ck["params"]
     params.p_pos.copy_(trained["p_pos"])
     params.p_ori.copy_(trained["p_ori"])
+    if trained_bodies is not None:
+        drop = torch.ones(params.p_pos.shape[0], dtype=torch.bool, device=device)
+        drop[trained_bodies] = False
+        params.p_pos[drop] = 0.0
+        params.p_ori[drop] = 0.0
     if trained_pz:
         params.p_z.copy_(trained["p_z"][torch.as_tensor(lib.indices, device=device)])
     ecfg = EnvCfg(**(ck["env_cfg"] | {"num_envs": lib.num_motions, "max_episode_steps": 10**9}))

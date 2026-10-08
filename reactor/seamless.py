@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from reactor.smplh import NUM_BODY_JOINTS, PARENTS, rest_joints
+from reactor.smplh import CANON_TO_WORLD, NUM_BODY_JOINTS, PARENTS, rest_joints
 
 SEAMLESS_ROOT = Path(os.environ.get("SEAMLESS_ROOT", Path(__file__).resolve().parents[1] / "data" / "seamless_interaction"))
 SEAMLESS_FPS = 30.0
@@ -94,6 +94,23 @@ def placed_axis_angle(global_orient: np.ndarray, body_pose: np.ndarray, subject:
     aa[:, 0] = placed_root.as_rotvec()
     aa[:, 1:] = body_pose[:, : NUM_BODY_JOINTS - 1]
     return aa, (yaw * Rotation.from_matrix(CAM_TO_WORLD)).as_matrix()
+
+
+# SMPL+H joints whose local rotation is kept in arms-only mode: collars, shoulders, elbows, wrists.
+ARM_JOINTS = [13, 14, 16, 17, 18, 19, 20, 21]
+
+
+def arms_only(aa: np.ndarray, subject: int) -> np.ndarray:
+    """Keep only the arm motion: upright root facing the partner, straight legs, upright spine.
+
+    The arms keep their local rotations, so they move relative to an upright torso instead of
+    the subject's (often seated, leaning) one.
+    """
+    out = np.zeros_like(aa)
+    yaw = 0.0 if subject == 0 else np.pi
+    out[:, 0] = (Rotation.from_euler("z", yaw) * Rotation.from_matrix(CANON_TO_WORLD)).as_rotvec()
+    out[:, ARM_JOINTS] = aa[:, ARM_JOINTS]
+    return out
 
 
 def slot_translation(aa: np.ndarray, rest: np.ndarray, subject: int, h_src: float,

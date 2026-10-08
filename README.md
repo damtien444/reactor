@@ -143,6 +143,9 @@ DISPLAY=:1 MUJOCO_GL=glfw uv run python scripts/render_seamless.py \
     --segments V00_S1216_I00001053_S0_6000_6300                            # -> renders/seamless/<segment>/
 ```
 
+- **Arms only:** `render_seamless.py --arms-only` retargets only the replaced subject's arms. The
+  reference has the torso upright and the legs straight; the simulated policy keeps balance against
+  the arm motion. Output: `robot_reactor_arms.mp4`.
 - **Clip and segment names:**
   - `--clips` takes paths relative to `data/amass`. They must have passed the dataset filter in
     `prep_amass.py`.
