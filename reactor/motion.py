@@ -25,6 +25,7 @@ class MotionLib:
         starts = np.concatenate([[0], np.cumsum(lengths)[:-1]])
         t = lambda a, dt=torch.float32: torch.as_tensor(a, dtype=dt, device=device)
         self.fps = float(d["fps"])
+        self.robot = str(d["robot"]) if "robot" in d else "g1"  # datasets before multi-robot are G1
         self.dt = 1.0 / self.fps
         self.num_motions = len(keep)
         self.starts = t(starts, torch.long)

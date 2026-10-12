@@ -19,7 +19,7 @@ from reactor import DATA, ROOT
 from reactor.env import EnvCfg, ReActorEnv
 from reactor.motion import MotionLib, RetargetParams
 from reactor.ppo import ActorCritic, PPOCfg
-from reactor.robot import SCENE_XML
+from reactor.robot import scene_spec
 from reactor.smplh import NUM_BODY_JOINTS, PARENTS
 
 SUBTITLE_STYLE = ("FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H90000000,"
@@ -30,12 +30,14 @@ BLUE = [0.35, 0.65, 0.95, 1.0]
 
 # ---------------------------------------------------------------------- simulation
 @torch.no_grad()
-def rollout(run: str, data: Path, device, names_filter=None, trained_pz: bool = False, seed: int = 0):
+def rollout(run: str, data: Path, device, names_filter=None, trained_pz: bool = False, seed: int = 0,
+            trained_bodies: list[int] | None = None):
     """Roll out the trained policy once on every selected motion, from frame 0.
 
     Returns the 50 Hz qpos per motion and whether the robot failed. ``trained_pz`` uses the
     learned per-motion vertical offsets, which only exist for motions of the training set
-    (``data`` must then be the training data); otherwise p_z is 0.
+    (``data`` must then be the training data); otherwise p_z is 0. ``trained_bodies`` keeps the
+    learned per-body offsets only for those correspondence pairs (others get 0).
     """
     ck = torch.load(ROOT / "runs" / run / "model.pt", map_location=device, weights_only=False)
     lib = MotionLib(data, device, names_filter)
@@ -44,6 +46,11 @@ def rollout(run: str, data: Path, device, names_filter=None, trained_pz: bool = 
     trained = ck["params"]
     params.p_pos.copy_(trained["p_pos"])
     params.p_ori.copy_(trained["p_ori"])
+    if trained_bodies is not None:
+        drop = torch.ones(params.p_pos.shape[0], dtype=torch.bool, device=device)
+        drop[trained_bodies] = False
+        params.p_pos[drop] = 0.0
+        params.p_ori[drop] = 0.0
     if trained_pz:
         params.p_z.copy_(trained["p_z"][torch.as_tensor(lib.indices, device=device)])
     ecfg = EnvCfg(**(ck["env_cfg"] | {"num_envs": lib.num_motions, "max_episode_steps": 10**9}))
@@ -134,11 +141,14 @@ class HumanMesh:
         return np.stack(pos), quat
 
 
-def scene_model(humans: list[tuple[HumanMesh, list]]) -> mujoco.MjModel:
-    """G1 plus SMPL+H skins; mocap bodies are ordered as ``humans``."""
-    spec = mujoco.MjSpec.from_file(str(SCENE_XML))
-    for pair in list(spec.pairs):
-        spec.delete(pair)
+def run_robot(run: str) -> str:
+    """Robot a trained run was trained on (runs from before multi-robot support are G1)."""
+    ck = torch.load(ROOT / "runs" / run / "model.pt", map_location="cpu", weights_only=False)
+    return ck["env_cfg"].get("robot", "g1")
+
+def scene_model(humans: list[tuple[HumanMesh, list]], robot: str = "g1") -> mujoco.MjModel:
+    """Robot plus SMPL+H skins; mocap bodies are ordered as ``humans``."""
+    spec = scene_spec(robot)
     spec.visual.global_.offwidth, spec.visual.global_.offheight = 1920, 1080
     spec.visual.headlight.ambient = [0.45, 0.45, 0.45]
     spec.visual.headlight.diffuse = [0.55, 0.55, 0.55]

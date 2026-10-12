@@ -29,15 +29,15 @@ class TargetContext:
     clearance: torch.Tensor  # per-body ground clearance used for z_nom
 
     @classmethod
-    def create(cls, device: torch.device) -> TargetContext:
-        robot = RobotInfo(build_model())
+    def create(cls, device: torch.device, robot: str = "g1") -> TargetContext:
+        robot = RobotInfo(build_model(robot), robot)
         tgt_pos, tgt_rot = robot.nominal_frames()
         # The source nominal configuration is the zero pose with root orientation C, so every
         # source global frame equals C and R_nom = C^T R_target (Eq. 9).
         R_nom = (CANON_TO_WORLD.T @ tgt_rot).astype(np.float32)
         clearance = torch.full((len(robot.smpl_ids),), 0.05, device=device)
         for fb in robot.foot_ids:
-            clearance[list(robot.body_ids).index(fb)] = 0.035
+            clearance[list(robot.body_ids).index(fb)] = robot.spec.foot_clearance
         return cls(robot, tgt_pos, float(tgt_pos[0, 2]), robot.smpl_ids, R_nom, clearance)
 
 
@@ -135,6 +135,7 @@ def save_tracks(path, ctx: TargetContext, tracks: list[dict], names: list[str]) 
         x_nom=np.stack([t["x_nom"] for t in tracks]),
         z_nom=np.array([t["z_nom"] for t in tracks], np.float32),
         R_nom=ctx.R_nom,
+        robot=ctx.robot.name,
         names=np.array(names),
         fps=FPS,
     )

@@ -15,11 +15,13 @@ from reactor.bilevel import UpperCfg, UpperLevel
 from reactor.env import EnvCfg, ReActorEnv
 from reactor.motion import MotionLib, RetargetParams
 from reactor.ppo import PPO, ActorCritic, PPOCfg
+from reactor.robot import ROBOTS
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", type=Path, default=DATA / "processed" / "amass_g1.npz")
+    ap.add_argument("--robot", choices=list(ROBOTS), default="g1")
+    ap.add_argument("--data", type=Path, help="default: data/processed/amass_<robot>.npz")
     ap.add_argument("--run", type=str, default="reactor")
     ap.add_argument("--iterations", type=int, default=20000)
     ap.add_argument("--num-envs", type=int, default=4096)
@@ -31,6 +33,7 @@ def main():
     ap.add_argument("--resume", type=Path)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
+    args.data = args.data or DATA / "processed" / f"amass_{args.robot}.npz"
 
     torch.manual_seed(args.seed)
     dev = torch.device("cuda")
@@ -41,7 +44,7 @@ def main():
     lib = MotionLib(args.data, dev)
     ucfg = UpperCfg(lr=args.upper_lr, warmstart=args.warmstart if not args.no_bilevel else 10**12)
     params = RetargetParams(lib.x_nom.shape[1], lib.num_motions, ucfg.d_pos, ucfg.d_ori, ucfg.d_z).to(dev)
-    ecfg = EnvCfg(num_envs=args.num_envs, self_collision=not args.no_self_collision,
+    ecfg = EnvCfg(robot=args.robot, num_envs=args.num_envs, self_collision=not args.no_self_collision,
                   w_force=args.force_weight, w_torque_root=args.force_weight)
     env = ReActorEnv(ecfg, lib, params, dev)
     pcfg = PPOCfg()

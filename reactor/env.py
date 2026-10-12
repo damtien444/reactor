@@ -21,6 +21,7 @@ from reactor.rotations import geodesic_sq, mat_to_6d, quat_to_mat
 
 @dataclass
 class EnvCfg:
+    robot: str = "g1"
     num_envs: int = 4096
     sim_dt: float = 0.005
     decimation: int = 4  # 50 Hz control
@@ -58,8 +59,10 @@ class EnvCfg:
 class ReActorEnv:
     def __init__(self, cfg: EnvCfg, lib: MotionLib, params: RetargetParams, device: torch.device):
         self.cfg, self.lib, self.params, self.device = cfg, lib, params, device
-        self.mj_model = build_model(cfg.sim_dt, cfg.self_collision)
-        self.robot = RobotInfo(self.mj_model)
+        if lib.robot != cfg.robot:
+            raise ValueError(f"motion data is for robot '{lib.robot}', env is configured for '{cfg.robot}'")
+        self.mj_model = build_model(cfg.robot, cfg.sim_dt, cfg.self_collision)
+        self.robot = RobotInfo(self.mj_model, cfg.robot)
         N, m = cfg.num_envs, self.mj_model
         self.N = N
         self.nj = self.robot.num_joints
@@ -96,7 +99,7 @@ class ReActorEnv:
         self.action_scale = t(r.action_scale)
         self.body_ids = t(r.body_ids, torch.long)
         self.root = r.root_body
-        self.torso_pair = [b for b, _ in __import__("reactor.robot", fromlist=["x"]).CORRESPONDENCES].index("torso_link")
+        self.torso_pair = r.torso_pair
         col = [g for g in range(m.ngeom) if m.geom_bodyid[g] > 0 and m.geom_contype[g]]
         self.col_geoms = t(col, torch.long)
         self.col_radius = t(m.geom_size[col, 0])

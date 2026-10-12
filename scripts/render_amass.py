@@ -1,4 +1,4 @@
-"""Render AMASS clips: the original human next to the ReActor-retargeted G1.
+"""Render AMASS clips: the original human next to the ReActor-retargeted robot.
 
 The robot is the trained policy tracking the clip in MuJoCo Warp, using the trained
 retargeting parameters *including* the clip's learned per-motion offset p_z (these clips are
@@ -23,7 +23,8 @@ from scipy.spatial.transform import Rotation
 
 from reactor import DATA, ROOT
 from reactor.render import (
-    BLUE, HumanMesh, add_grid, drawtext, encode, look_at_camera, rollout, scene_model, set_robot_qpos,
+    BLUE, HumanMesh, add_grid, drawtext, encode, look_at_camera, rollout, run_robot, scene_model,
+    set_robot_qpos,
     visual_option,
 )
 from reactor.source import resample
@@ -69,7 +70,8 @@ def human_floor(mesh: HumanMesh, aa: np.ndarray, trans: np.ndarray) -> float:
     return float(np.min(lows))
 
 
-def render_clip(name: str, qpos50: np.ndarray, failed: bool, out_dir: Path, gap: float, width: int, height: int):
+def render_clip(name: str, qpos50: np.ndarray, failed: bool, out_dir: Path, gap: float, width: int, height: int,
+                robot: str = "g1"):
     aa, trans, human = load_human(DATA / "amass" / name)
     n = min(len(aa), int(len(qpos50) / 50.0 * FPS))
     aa, trans = aa[:n], trans[:n].copy()
@@ -83,7 +85,7 @@ def render_clip(name: str, qpos50: np.ndarray, failed: bool, out_dir: Path, gap:
     pelvis0 = human.bones(aa[0], trans[0])[0][0]
     trans[:, :2] += qpos50[0, :2] - pelvis0[:2] + side[:2] * gap
 
-    model = scene_model([(human, BLUE)])
+    model = scene_model([(human, BLUE)], robot)
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, height, width)
     cam = mujoco.MjvCamera()
@@ -118,7 +120,7 @@ def render_clip(name: str, qpos50: np.ndarray, failed: bool, out_dir: Path, gap:
     title = name.removesuffix("_poses.npz").replace("_c3d", "")
     labels = [
         drawtext(title, "24", "20", 24),
-        drawtext("human (AMASS)  |  G1 (ReActor policy, simulated)", "24", "60", 20),
+        drawtext(f"human (AMASS)  |  {robot.upper()} (ReActor policy, simulated)", "24", "60", 20),
     ]
     if failed:
         labels.append(drawtext("robot fell - pose frozen after failure", "24", "96", 20))
@@ -139,7 +141,8 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
 
     wanted = set(args.clips)
-    data = DATA / "processed" / "amass_g1.npz"
+    robot = run_robot(args.run)
+    data = DATA / "processed" / f"amass_{robot}.npz"
     available = set(str(n) for n in np.load(data)["names"])
     missing = wanted - available
     if missing:
@@ -151,7 +154,7 @@ def main():
     names, qpos, failed = rollout(args.run, data, dev, names_filter=lambda n: n in wanted, trained_pz=True)
     print("[2/2] rendering")
     for name, q, f in zip(names, qpos, failed):
-        path = render_clip(name, q, bool(f), args.out, args.gap, args.width, args.height)
+        path = render_clip(name, q, bool(f), args.out, args.gap, args.width, args.height, robot)
         print(f"  {'FELL ' if f else 'ok   '} {path}")
 
 

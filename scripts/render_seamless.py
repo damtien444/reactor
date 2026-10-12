@@ -30,12 +30,14 @@ from PIL import Image
 
 from reactor import ROOT
 from reactor.render import (
-    ORANGE, HumanMesh, add_grid, encode, look_at_camera, rollout, scene_model, set_robot_qpos, visual_option,
+    ORANGE, HumanMesh, add_grid, encode, look_at_camera, rollout, run_robot, scene_model, set_robot_qpos,
+    visual_option,
 )
 from reactor.seamless import (
-    FACE_TO_FACE_DIST, SEAMLESS_FPS, Segment, find_audio, find_pair, load_pose, placed_axis_angle,
+    FACE_TO_FACE_DIST, SEAMLESS_FPS, Segment, arms_only, find_audio, find_pair, load_pose, placed_axis_angle,
     slot_translation,
 )
+from reactor.robot import get_robot
 from reactor.source import TargetContext, body_shape, make_track, save_tracks
 
 # Optional: a holosoma seamless report folder; its segment names, audio and subtitles are reused.
@@ -44,15 +46,20 @@ HOLOSOMA_REVIEW = Path(os.environ.get(
 
 
 # ---------------------------------------------------------------------- simulation
-def build_tracks(segments: list[Segment], out: Path, device) -> list[dict]:
-    """Source tracks (robot subject) and partner poses for every segment."""
-    ctx = TargetContext.create(device)
+def build_tracks(segments: list[Segment], out: Path, device, robot: str, arms: bool = False) -> list[dict]:
+    """Source tracks (robot subject) and partner poses for every segment.
+
+    With ``arms`` only the replaced subject's arm motion is retargeted (see ``arms_only``).
+    """
+    ctx = TargetContext.create(device, robot)
     h_src, rest = body_shape("neutral", np.zeros(16))
     tracks, names, scenes = [], [], []
     for seg in segments:
         ids, archives = find_pair(seg.interaction_id)
         go, bp = load_pose(archives[seg.subject], ids[seg.subject], seg.start, seg.end)
         aa, _ = placed_axis_angle(go, bp, seg.subject, rest)
+        if arms:
+            aa = arms_only(aa, seg.subject)
         trans = slot_translation(aa, rest, seg.subject, h_src)
         tracks.append(make_track(ctx, rest, h_src, trans, aa, SEAMLESS_FPS, device))
         names.append(seg.name)
@@ -115,6 +122,8 @@ def main():
     ap.add_argument("--segments", nargs="*", default=None,
                     help="segment names; default: every segment of the holosoma review report")
     ap.add_argument("--out", type=Path, default=ROOT / "renders" / "seamless")
+    ap.add_argument("--arms-only", action="store_true",
+                    help="retarget only the arms; torso upright, legs straight (balance is left to the policy)")
     ap.add_argument("--width", type=int, default=1280)
     ap.add_argument("--height", type=int, default=720)
     args = ap.parse_args()
@@ -128,24 +137,30 @@ def main():
         ap.error(f"no --segments given and no holosoma report at {HOLOSOMA_REVIEW} (set HOLOSOMA_REVIEW)")
     segments = [Segment.parse(n) for n in names]
     print(f"{len(segments)} segments -> {args.out}")
-    data_path = args.out / "seamless_tracks.npz"
-    scenes = build_tracks(segments, data_path, dev)
+    tag = "reactor_arms" if args.arms_only else "reactor"
+    data_path = args.out / f"seamless_tracks_{tag}.npz"
+    robot = run_robot(args.run)
+    scenes = build_tracks(segments, data_path, dev, robot, arms=args.arms_only)
     print(f"[1/2] simulating ReActor policy '{args.run}'")
-    names_sim, qpos, failed = rollout(args.run, data_path, dev)
+    # arms-only: the trained offsets of torso/leg bodies (learned on AMASS) would tilt the upright
+    # reference, so only the arm bodies keep theirs
+    arm_pairs = [i for i, (b, _) in enumerate(get_robot(robot).correspondences)
+                 if any(k in b for k in ("shoulder", "elbow", "wrist", "hand"))]
+    names_sim, qpos, failed = rollout(args.run, data_path, dev, trained_bodies=arm_pairs if args.arms_only else None)
     for n, f in zip(names_sim, failed):
         print(f"  {n}: {'FELL (pose frozen after failure)' if f else 'tracked'}")
 
     print("[2/2] rendering")
     partner = HumanMesh("partner")
-    model = scene_model([(partner, ORANGE)])
+    model = scene_model([(partner, ORANGE)], robot)
     for scene, q in zip(scenes, qpos):
         seg = scene["segment"]
         out_dir = args.out / seg.name
         out_dir.mkdir(parents=True, exist_ok=True)
-        np.savez(out_dir / "robot_reactor_qpos.npz", qpos=q, fps=50.0, segment=seg.name)
+        np.savez(out_dir / f"robot_{tag}_qpos.npz", qpos=q, fps=50.0, segment=seg.name)
         subs = HOLOSOMA_REVIEW / seg.name / "subtitles.srt"
         path = render_video(scene, q, model, partner, out_dir, args.width, args.height,
-                            segment_audio(scene, out_dir), subs if subs.exists() else None, "reactor")
+                            segment_audio(scene, out_dir), subs if subs.exists() else None, tag)
         print(f"  {path}")
 
 
